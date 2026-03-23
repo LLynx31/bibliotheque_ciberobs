@@ -56,7 +56,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-white/10 px-6">
         <BookOpen className="mr-2 h-6 w-6" style={{ color: "hsl(41.2 100% 55.5%)" }} />
-        <span className="text-lg font-bold text-white">Ciberobs</span>
+        <span className="text-lg font-heading font-bold text-white">Omniscia</span>
       </div>
 
       <nav className="flex-1 space-y-1 p-4">

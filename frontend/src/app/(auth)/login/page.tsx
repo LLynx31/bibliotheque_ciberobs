@@ -51,7 +51,7 @@ export default function LoginPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
           <BookOpen className="h-6 w-6 text-primary-foreground" />
         </div>
-        <CardTitle>Bibliothèque Ciberobs</CardTitle>
+        <CardTitle>Omniscia</CardTitle>
         <CardDescription>
           Connectez-vous pour accéder à la bibliothèque
         </CardDescription>

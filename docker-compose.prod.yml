@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: ciberobs_db
+    container_name: omniscia_db
     restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -17,7 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: ciberobs_redis
+    container_name: omniscia_redis
     restart: always
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
@@ -32,7 +32,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: ciberobs_backend
+    container_name: omniscia_backend
     restart: always
     command: >
       sh -c "python manage.py migrate --noinput &&
@@ -65,14 +65,14 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
-    container_name: ciberobs_frontend
+    container_name: omniscia_frontend
     restart: always
     depends_on:
       - backend
 
   nginx:
     image: nginx:alpine
-    container_name: ciberobs_nginx
+    container_name: omniscia_nginx
     restart: always
     ports:
       - "${HTTP_PORT:-80}:80"

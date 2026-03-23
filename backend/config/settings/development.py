@@ -6,9 +6,9 @@ DEBUG = True
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB", "bibliotheque"),
-        "USER": os.environ.get("POSTGRES_USER", "ciberobs"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "ciberobs_secret"),
+        "NAME": os.environ.get("POSTGRES_DB", "omniscia"),
+        "USER": os.environ.get("POSTGRES_USER", "omniscia"),
+        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "omniscia_secret"),
         "HOST": os.environ.get("DB_HOST", "db"),
         "PORT": os.environ.get("DB_PORT", "5432"),
     }

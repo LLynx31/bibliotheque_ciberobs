@@ -3,25 +3,25 @@ version: "3.9"
 services:
   db:
     image: postgres:17-alpine
-    container_name: ciberobs_db
+    container_name: omniscia_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bibliotheque}
-      POSTGRES_USER: ${POSTGRES_USER:-ciberobs}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ciberobs_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-omniscia}
+      POSTGRES_USER: ${POSTGRES_USER:-omniscia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omniscia_secret}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ciberobs}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omniscia}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: ciberobs_redis
+    container_name: omniscia_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -37,7 +37,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: ciberobs_backend
+    container_name: omniscia_backend
     restart: unless-stopped
     command: >
       sh -c "python manage.py makemigrations accounts books loans notifications dashboard &&
@@ -46,7 +46,7 @@ services:
              daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - DATABASE_URL=postgres://${POSTGRES_USER:-ciberobs}:${POSTGRES_PASSWORD:-ciberobs_secret}@db:5432/${POSTGRES_DB:-bibliotheque}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-omniscia}:${POSTGRES_PASSWORD:-omniscia_secret}@db:5432/${POSTGRES_DB:-omniscia}
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${DJANGO_SECRET_KEY:-change-me-in-production}
       - ALLOWED_HOSTS=localhost,127.0.0.1,backend
@@ -67,7 +67,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: ciberobs_frontend
+    container_name: omniscia_frontend
     restart: unless-stopped
     command: npm run dev
     environment:

@@ -10,8 +10,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Bibliothèque Ciberobs",
-  description: "Gestion de la bibliothèque Ciberobs",
+  title: "Omniscia",
+  description: "Omniscia — Gestion de la bibliothèque",
 };
 
 export default function RootLayout({

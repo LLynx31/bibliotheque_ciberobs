@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  Bibliothèque Ciberobs — Script de déploiement production
+#  Omniscia — Script de déploiement production
 # ============================================================
 
 RED='\033[0;31m'
@@ -14,12 +14,12 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 ENV_FILE=".env.prod"
-COMPOSE_FILE="docker-compose.prod.yml"
+USE_NGINX="n"
 
 banner() {
     echo ""
     echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}${BOLD}║   Bibliothèque Ciberobs — Déploiement Prod  ║${NC}"
+    echo -e "${BLUE}${BOLD}║       Omniscia — Déploiement Production      ║${NC}"
     echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -109,11 +109,27 @@ configure() {
     ask "Port HTTP" "80" HTTP_PORT
 
     echo ""
+    echo -e "${BOLD}── Reverse proxy ──${NC}"
+    echo ""
+    echo -e "  ${BOLD}1)${NC} Nginx intégré (inclus dans Docker, prêt à l'emploi)"
+    echo -e "  ${BOLD}2)${NC} Proxy externe (vous gérez votre propre reverse proxy)"
+    echo ""
+    ask "Votre choix" "1" PROXY_CHOICE
+
+    if [[ "$PROXY_CHOICE" == "1" ]]; then
+        USE_NGINX="y"
+        COMPOSE_FILE="docker-compose.prod.yml"
+    else
+        USE_NGINX="n"
+        COMPOSE_FILE="docker-compose.prod-noproxy.yml"
+    fi
+
+    echo ""
     echo -e "${BOLD}── Base de données PostgreSQL ──${NC}"
     echo ""
 
-    ask "Nom de la base de données" "bibliotheque" POSTGRES_DB
-    ask "Utilisateur PostgreSQL" "ciberobs" POSTGRES_USER
+    ask "Nom de la base de données" "omniscia_db" POSTGRES_DB
+    ask "Utilisateur PostgreSQL" "omniscia" POSTGRES_USER
     ask_password "Mot de passe PostgreSQL (min 12 car.)" POSTGRES_PASSWORD
 
     echo ""
@@ -137,22 +153,42 @@ configure() {
     fi
 
     # URLs
-    if [[ "$HTTP_PORT" == "80" ]]; then
-        BASE_URL="http://${DOMAIN}"
+    if [[ "$USE_NGINX" == "y" ]]; then
+        # Nginx unifie tout sur un seul port
+        if [[ "$HTTP_PORT" == "80" ]]; then
+            BASE_URL="http://${DOMAIN}"
+        else
+            BASE_URL="http://${DOMAIN}:${HTTP_PORT}"
+        fi
+        NEXT_PUBLIC_API_URL="${BASE_URL}/api/v1"
+        NEXT_PUBLIC_WS_URL="ws://${DOMAIN}:${HTTP_PORT}/ws"
+        CORS_ORIGINS="${BASE_URL}"
+        BACKEND_PORT="8000"
+        FRONTEND_PORT="3000"
     else
-        BASE_URL="http://${DOMAIN}:${HTTP_PORT}"
+        # Sans Nginx, les ports sont exposés directement
+        ask "Port backend (API)" "8000" BACKEND_PORT
+        ask "Port frontend" "3000" FRONTEND_PORT
+        if [[ "$HTTP_PORT" == "80" ]]; then
+            BASE_URL="http://${DOMAIN}"
+        else
+            BASE_URL="http://${DOMAIN}:${FRONTEND_PORT}"
+        fi
+        NEXT_PUBLIC_API_URL="http://${DOMAIN}:${BACKEND_PORT}/api/v1"
+        NEXT_PUBLIC_WS_URL="ws://${DOMAIN}:${BACKEND_PORT}/ws"
+        CORS_ORIGINS="http://${DOMAIN}:${FRONTEND_PORT}"
     fi
-
-    NEXT_PUBLIC_API_URL="${BASE_URL}/api/v1"
-    NEXT_PUBLIC_WS_URL="ws://${DOMAIN}:${HTTP_PORT}/ws"
-    CORS_ORIGINS="${BASE_URL}"
 
     # Récapitulatif
     echo ""
     echo -e "${BOLD}── Récapitulatif ──${NC}"
     echo ""
     echo -e "  Domaine        : ${GREEN}${DOMAIN}${NC}"
-    echo -e "  Port HTTP      : ${GREEN}${HTTP_PORT}${NC}"
+    if [[ "$USE_NGINX" == "y" ]]; then
+        echo -e "  Reverse proxy  : ${GREEN}Nginx intégré (port ${HTTP_PORT})${NC}"
+    else
+        echo -e "  Reverse proxy  : ${YELLOW}Externe (backend:${BACKEND_PORT}, frontend:${FRONTEND_PORT})${NC}"
+    fi
     echo -e "  URL app        : ${GREEN}${BASE_URL}${NC}"
     echo -e "  URL API        : ${GREEN}${NEXT_PUBLIC_API_URL}${NC}"
     echo -e "  Base de données: ${GREEN}${POSTGRES_DB}${NC} (user: ${POSTGRES_USER})"
@@ -163,6 +199,99 @@ configure() {
         warn "Déploiement annulé."
         exit 0
     fi
+}
+
+# ============================================================
+#  Génération du docker-compose sans proxy
+# ============================================================
+generate_noproxy_compose() {
+    info "Génération de docker-compose.prod-noproxy.yml..."
+
+    cat > "docker-compose.prod-noproxy.yml" <<'COMPEOF'
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: omniscia_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: omniscia_redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omniscia_backend
+    restart: always
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY}
+      - ALLOWED_HOSTS=${DOMAIN},localhost,backend
+      - CORS_ALLOWED_ORIGINS=${CORS_ORIGINS}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+    container_name: omniscia_frontend
+    restart: always
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_static:
+  backend_media:
+COMPEOF
+
+    success "docker-compose.prod-noproxy.yml généré."
 }
 
 # ============================================================
@@ -194,6 +323,10 @@ DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
 NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
 CORS_ORIGINS=${CORS_ORIGINS}
+
+# Ports (mode sans proxy)
+BACKEND_PORT=${BACKEND_PORT:-8000}
+FRONTEND_PORT=${FRONTEND_PORT:-3000}
 EOF
 
     chmod 600 "$ENV_FILE"
@@ -212,6 +345,11 @@ EOF
 #  Build & déploiement
 # ============================================================
 deploy() {
+    # Générer le compose sans proxy si besoin
+    if [[ "$USE_NGINX" != "y" ]]; then
+        generate_noproxy_compose
+    fi
+
     echo ""
     info "Arrêt des conteneurs existants..."
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down 2>/dev/null || true
@@ -255,7 +393,7 @@ if not User.objects.filter(username='${ADMIN_USERNAME}').exists():
     )
     u.role = 'admin'
     u.first_name = 'Admin'
-    u.last_name = 'Ciberobs'
+    u.last_name = 'Omniscia'
     u.save()
     print('Compte admin créé.')
 else:
@@ -273,10 +411,14 @@ verify() {
     echo ""
 
     local all_ok=true
+    local services="db redis backend frontend"
+    if [[ "$USE_NGINX" == "y" ]]; then
+        services="$services nginx"
+    fi
 
-    for svc in db redis backend frontend nginx; do
+    for svc in $services; do
         local state
-        state=$(docker inspect --format='{{.State.Status}}' "ciberobs_${svc}" 2>/dev/null || echo "absent")
+        state=$(docker inspect --format='{{.State.Status}}' "omniscia_${svc}" 2>/dev/null || echo "absent")
         if [[ "$state" == "running" ]]; then
             success "  ${svc}: en cours d'exécution"
         else
@@ -310,6 +452,21 @@ verify() {
     echo "  Arrêter    : docker compose -f $COMPOSE_FILE --env-file $ENV_FILE down"
     echo "  Redémarrer : docker compose -f $COMPOSE_FILE --env-file $ENV_FILE restart"
     echo "  Backup DB  : docker compose -f $COMPOSE_FILE --env-file $ENV_FILE exec db pg_dump -U $POSTGRES_USER $POSTGRES_DB > backup.sql"
+
+    if [[ "$USE_NGINX" != "y" ]]; then
+        echo ""
+        echo -e "${BOLD}Configuration proxy externe :${NC}"
+        echo "  Backend (API + WS) : http://localhost:${BACKEND_PORT}"
+        echo "  Frontend           : http://localhost:${FRONTEND_PORT}"
+        echo ""
+        echo "  Routes à configurer dans votre reverse proxy :"
+        echo "    /api/*    → http://localhost:${BACKEND_PORT}"
+        echo "    /ws/*     → http://localhost:${BACKEND_PORT}  (WebSocket: Upgrade + Connection headers)"
+        echo "    /static/* → volume backend_static (/app/staticfiles)"
+        echo "    /media/*  → volume backend_media (/app/media)"
+        echo "    /*        → http://localhost:${FRONTEND_PORT}"
+    fi
+
     echo ""
 }
 

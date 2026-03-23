@@ -14,7 +14,7 @@
 
 @layer base {
   :root {
-    /* Charte Ciberobs */
+    /* Charte Omniscia */
     --background: 210 36.4% 95.7%;                  /* #F0F4F8 */
     --foreground: 214.3 100% 16.5%;              /* #002454 - Bleu marine */
     --card: 0 0% 100%;
@@ -38,11 +38,11 @@
     --ring: 211.8 100% 35.9%;                     /* #0056B7 */
     --radius: 0.5rem;
 
-    /* Couleurs utilitaires Ciberobs */
-    --ciberobs-marine: 214.3 100% 16.5%;          /* #002454 */
-    --ciberobs-bleu: 211.8 100% 35.9%;            /* #0056B7 */
-    --ciberobs-or: 41.2 100% 55.5%;               /* #FFB81C */
-    --ciberobs-violet: 266.8 52.4% 48.6%;         /* #753BBD */
+    /* Couleurs utilitaires Omniscia */
+    --omniscia-marine: 214.3 100% 16.5%;          /* #002454 */
+    --omniscia-bleu: 211.8 100% 35.9%;            /* #0056B7 */
+    --omniscia-or: 41.2 100% 55.5%;               /* #FFB81C */
+    --omniscia-violet: 266.8 52.4% 48.6%;         /* #753BBD */
   }
 }
 
