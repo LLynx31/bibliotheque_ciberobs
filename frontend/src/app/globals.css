@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Foundry Sterling";
+  src: url("https://db.onlinewebfonts.com/t/35f78e3dd41d762413e972d0e9499861.woff2") format("woff2"),
+       url("https://db.onlinewebfonts.com/t/35f78e3dd41d762413e972d0e9499861.woff") format("woff"),
+       url("https://db.onlinewebfonts.com/t/35f78e3dd41d762413e972d0e9499861.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* Charte Ciberobs */
+    --background: 210 36.4% 95.7%;                  /* #F0F4F8 */
+    --foreground: 214.3 100% 16.5%;              /* #002454 - Bleu marine */
+    --card: 0 0% 100%;
+    --card-foreground: 214.3 100% 16.5%;          /* #002454 */
+    --primary: 211.8 100% 35.9%;                  /* #0056B7 - Bleu vif */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 266.8 52.4% 48.6%;               /* #753BBD - Violet */
+    --secondary-foreground: 0 0% 100%;
+    --accent: 214 30% 95%;
+    --accent-foreground: 214.3 100% 16.5%;        /* #002454 */
+    --warning: 41.2 100% 55.5%;                   /* #FFB81C - Or */
+    --warning-foreground: 214.3 100% 16.5%;       /* #002454 */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --muted: 214 30% 95%;
+    --muted-foreground: 214.3 40% 40%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 30% 90%;
+    --input: 214 30% 90%;
+    --ring: 211.8 100% 35.9%;                     /* #0056B7 */
+    --radius: 0.5rem;
+
+    /* Couleurs utilitaires Ciberobs */
+    --ciberobs-marine: 214.3 100% 16.5%;          /* #002454 */
+    --ciberobs-bleu: 211.8 100% 35.9%;            /* #0056B7 */
+    --ciberobs-or: 41.2 100% 55.5%;               /* #FFB81C */
+    --ciberobs-violet: 266.8 52.4% 48.6%;         /* #753BBD */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Foundry Sterling", var(--font-poppins), ui-sans-serif, sans-serif;
+  }
+}
