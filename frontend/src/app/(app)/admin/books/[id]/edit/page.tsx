@@ -35,6 +35,8 @@ export default function EditBookPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState("");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 
   const fetchCategories = () => {
     api.get("/books/categories/").then(({ data }) => setCategories(data)).catch(() => {});
@@ -67,11 +69,37 @@ export default function EditBookPage() {
     fetchBook();
   }, [params.id, router]);
 
-  const handleCreateCategorySimple = () => {
+  const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) return;
-    setForm((prev) => ({ ...prev, category_name: newCategoryName.trim() }));
-    setShowNewCategory(false);
-    setNewCategoryName("");
+    setIsCreatingCategory(true);
+    setCategoryError("");
+    try {
+      const response = await api.post("/books/categories/", {
+        name: newCategoryName.trim(),
+      });
+      
+      // Vérifier que la réponse contient bien id et name
+      if (!response.data?.id || !response.data?.name) {
+        throw new Error("Réponse invalide du serveur");
+      }
+      
+      // Ajouter la catégorie au select
+      setCategories((prev: any) => [...prev, response.data]);
+      // Sélectionner la nouvelle catégorie
+      setForm((prev: any) => ({ ...prev, category_name: response.data.name }));
+      // Fermer le dialog
+      setShowNewCategory(false);
+      setNewCategoryName("");
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.name?.[0] || 
+                       err.response?.data?.detail || 
+                       err.message || 
+                       "Erreur lors de la création de la catégorie";
+      setCategoryError(errorMsg);
+      console.error("Erreur création catégorie:", err.response?.data || err.message);
+    } finally {
+      setIsCreatingCategory(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,22 +227,38 @@ export default function EditBookPage() {
       </Card>
 
       {/* Popup création catégorie */}
-      <Dialog open={showNewCategory} onClose={() => setShowNewCategory(false)}>
+      <Dialog open={showNewCategory} onOpenChange={setShowNewCategory}>
         <DialogHeader>
           <DialogTitle>Nouvelle catégorie</DialogTitle>
         </DialogHeader>
         <div className="mt-4 space-y-4">
+          {categoryError && (
+            <div className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+              {categoryError}
+            </div>
+          )}
           <Input
             placeholder="Nom de la catégorie"
             value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
+            onChange={(e: any) => setNewCategoryName(e.target.value)}
+            disabled={isCreatingCategory}
             autoFocus
           />
           <div className="flex gap-2">
-            <Button onClick={handleCreateCategorySimple}>
-              Créer
+            <Button 
+              onClick={handleCreateCategory}
+              disabled={isCreatingCategory || !newCategoryName.trim()}
+            >
+              {isCreatingCategory ? "Création..." : "Créer"}
             </Button>
-            <Button variant="outline" onClick={() => setShowNewCategory(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowNewCategory(false);
+                setCategoryError("");
+              }}
+              disabled={isCreatingCategory}
+            >
               Annuler
             </Button>
           </div>

@@ -8,11 +8,18 @@ from .serializers import BookSerializer, BookListSerializer, CategorySerializer
 from .filters import BookFilter
 
 
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    permission_classes = [IsAdminOrReadOnly]
     search_fields = ["name"]
     pagination_class = None
+    
+    def get_permissions(self):
+        """Allow reading categories for everyone, but writing only for admins."""
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return []  # No auth required for reading
+        return [IsAdminOrReadOnly()]
 
 
 class BookViewSet(viewsets.ModelViewSet):

@@ -13,12 +13,16 @@ export default function AdminLayout({
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && user?.role !== "admin") {
+    if (!isLoading && !user) {
+      router.replace("/login");
+      return;
+    }
+    if (!isLoading && !["admin", "book_manager", "request_manager"].includes(user?.role || "")) {
       router.replace("/dashboard");
     }
   }, [user, isLoading, router]);
 
-  if (isLoading || user?.role !== "admin") return null;
+  if (isLoading || !user || !["admin", "book_manager", "request_manager"].includes(user.role)) return null;
 
   return <>{children}</>;
 }
