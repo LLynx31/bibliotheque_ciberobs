@@ -15,6 +15,8 @@ NC='\033[0m'
 
 ENV_FILE=".env.prod"
 USE_NGINX="n"
+COMPOSE_FILE=""
+IS_UPDATE=false
 
 banner() {
     echo ""
@@ -64,6 +66,108 @@ generate_secret() {
 }
 
 # ============================================================
+#  Chargement des variables depuis .env.prod existant
+# ============================================================
+load_existing_env() {
+    info "Chargement de la configuration existante depuis ${ENV_FILE}..."
+
+    # Source le fichier .env en évitant les lignes commentées
+    while IFS='=' read -r key value; do
+        # Ignorer les lignes vides et les commentaires
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        # Trim des espaces
+        key="${key// /}"
+        value="${value// /}"
+        export "$key=$value"
+    done < "$ENV_FILE"
+
+    # Restaurer les variables nécessaires au script
+    DOMAIN="${DOMAIN:-}"
+    HTTP_PORT="${HTTP_PORT:-80}"
+    POSTGRES_DB="${POSTGRES_DB:-}"
+    POSTGRES_USER="${POSTGRES_USER:-}"
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+    REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+    DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-}"
+    NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-}"
+    NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-}"
+    CORS_ORIGINS="${CORS_ORIGINS:-}"
+    BACKEND_PORT="${BACKEND_PORT:-8000}"
+    FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+    BASE_URL="http://${DOMAIN}"
+
+    # Détecter si Nginx est utilisé selon le fichier compose actif
+    if [[ -f "docker-compose.prod.yml" ]] && docker compose -f "docker-compose.prod.yml" --env-file "$ENV_FILE" ps --quiet 2>/dev/null | grep -q .; then
+        USE_NGINX="y"
+        COMPOSE_FILE="docker-compose.prod.yml"
+    elif [[ -f "docker-compose.prod-noproxy.yml" ]]; then
+        USE_NGINX="n"
+        COMPOSE_FILE="docker-compose.prod-noproxy.yml"
+    elif [[ -f "docker-compose.prod.yml" ]]; then
+        USE_NGINX="y"
+        COMPOSE_FILE="docker-compose.prod.yml"
+    fi
+
+    success "Configuration existante chargée (domaine: ${DOMAIN}, compose: ${COMPOSE_FILE})."
+}
+
+# ============================================================
+#  Détection d'une installation existante
+# ============================================================
+detect_existing_installation() {
+    local env_exists=false
+    local containers_exist=false
+
+    [[ -f "$ENV_FILE" ]] && env_exists=true
+
+    if docker inspect omniscia_backend &>/dev/null 2>&1; then
+        containers_exist=true
+    fi
+
+    if $env_exists; then
+        echo ""
+        echo -e "${YELLOW}${BOLD}⚠  Une installation existante a été détectée.${NC}"
+        echo ""
+        echo -e "  Fichier de config : ${CYAN}${ENV_FILE}${NC}"
+        if $containers_exist; then
+            local status
+            status=$(docker inspect --format='{{.State.Status}}' omniscia_backend 2>/dev/null || echo "inconnu")
+            echo -e "  Backend           : ${CYAN}${status}${NC}"
+        fi
+        echo ""
+        echo -e "  ${BOLD}1)${NC} Mettre à jour l'application  ${GREEN}(recommandé)${NC}"
+        echo -e "  ${BOLD}2)${NC} Reconfigurer complètement     ${RED}(repart de zéro, conserve les données)${NC}"
+        echo -e "  ${BOLD}3)${NC} Annuler"
+        echo ""
+
+        local choice
+        read -rp "$(echo -e "${BOLD}Votre choix${NC} [1]: ")" choice
+        choice="${choice:-1}"
+
+        case "$choice" in
+            1)
+                IS_UPDATE=true
+                load_existing_env
+                ;;
+            2)
+                IS_UPDATE=false
+                warn "Reconfiguration complète. Les données (DB, fichiers) seront conservées."
+                echo ""
+                ;;
+            3)
+                warn "Opération annulée."
+                exit 0
+                ;;
+            *)
+                warn "Choix invalide, mise à jour par défaut."
+                IS_UPDATE=true
+                load_existing_env
+                ;;
+        esac
+    fi
+}
+
+# ============================================================
 #  Vérification des prérequis
 # ============================================================
 check_prerequisites() {
@@ -98,7 +202,7 @@ check_prerequisites() {
 }
 
 # ============================================================
-#  Configuration
+#  Configuration (nouveau déploiement uniquement)
 # ============================================================
 configure() {
     echo ""
@@ -154,7 +258,6 @@ configure() {
 
     # URLs
     if [[ "$USE_NGINX" == "y" ]]; then
-        # Nginx unifie tout sur un seul port
         if [[ "$HTTP_PORT" == "80" ]]; then
             BASE_URL="http://${DOMAIN}"
         else
@@ -166,7 +269,6 @@ configure() {
         BACKEND_PORT="8000"
         FRONTEND_PORT="3000"
     else
-        # Sans Nginx, les ports sont exposés directement
         ask "Port backend (API)" "8000" BACKEND_PORT
         ask "Port frontend" "3000" FRONTEND_PORT
         if [[ "$HTTP_PORT" == "80" ]]; then
@@ -199,6 +301,59 @@ configure() {
         warn "Déploiement annulé."
         exit 0
     fi
+}
+
+# ============================================================
+#  Mise à jour de l'application (installation existante)
+# ============================================================
+update() {
+    echo ""
+    echo -e "${BLUE}${BOLD}── Mode mise à jour ──${NC}"
+    echo ""
+
+    # Optionnel : pull des dernières sources Git
+    if [[ -d ".git" ]]; then
+        ask "Récupérer les dernières sources via git pull ? (o/n)" "o" DO_GIT_PULL
+        if [[ "$DO_GIT_PULL" =~ ^[oOyY]$ ]]; then
+            info "Récupération des sources..."
+            git pull
+            success "Sources mises à jour."
+        fi
+    fi
+
+    echo ""
+    info "Reconstruction des images Docker..."
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --no-cache
+
+    echo ""
+    info "Redémarrage des services avec zéro downtime..."
+
+    # Redémarrage service par service pour minimiser l'interruption
+    for svc in backend frontend; do
+        info "  Mise à jour de ${svc}..."
+        docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps "$svc"
+        sleep 3
+    done
+
+    if [[ "$USE_NGINX" == "y" ]]; then
+        info "  Rechargement de nginx..."
+        docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps nginx 2>/dev/null || true
+    fi
+
+    echo ""
+    info "Application des migrations Django..."
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T backend \
+        python manage.py migrate --noinput && success "Migrations appliquées." \
+        || warn "Impossible d'appliquer les migrations (vérifiez les logs)."
+
+    echo ""
+    info "Collecte des fichiers statiques..."
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T backend \
+        python manage.py collectstatic --noinput --clear && success "Fichiers statiques collectés." \
+        || warn "Impossible de collecter les fichiers statiques."
+
+    echo ""
+    success "Mise à jour terminée."
 }
 
 # ============================================================
@@ -332,7 +487,6 @@ EOF
     chmod 600 "$ENV_FILE"
     success "${ENV_FILE} créé (permissions 600)."
 
-    # S'assurer que .env.prod est dans .gitignore
     if [[ -f .gitignore ]]; then
         if ! grep -q "\.env\.prod" .gitignore; then
             echo ".env.prod" >> .gitignore
@@ -342,10 +496,9 @@ EOF
 }
 
 # ============================================================
-#  Build & déploiement
+#  Build & déploiement complet (première installation)
 # ============================================================
 deploy() {
-    # Générer le compose sans proxy si besoin
     if [[ "$USE_NGINX" != "y" ]]; then
         generate_noproxy_compose
     fi
@@ -379,7 +532,6 @@ deploy() {
     info "Attente du backend..."
     sleep 5
 
-    # Création du superuser
     if [[ "${CREATE_ADMIN:-n}" =~ ^[oOyY]$ ]]; then
         info "Création du compte administrateur..."
         docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T backend python manage.py shell -c "
@@ -429,9 +581,12 @@ verify() {
 
     echo ""
 
+    local action_label="Déploiement"
+    $IS_UPDATE && action_label="Mise à jour"
+
     if $all_ok; then
         echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}${BOLD}║         Déploiement réussi !                ║${NC}"
+        echo -e "${GREEN}${BOLD}║         ${action_label} réussi${action_label == "Mise à jour" && echo "e" || echo " "}!                ║${NC}"
         echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
         echo ""
         echo -e "  Application : ${BOLD}${BASE_URL}${NC}"
@@ -476,9 +631,18 @@ verify() {
 main() {
     banner
     check_prerequisites
-    configure
-    write_env
-    deploy
+    detect_existing_installation
+
+    if $IS_UPDATE; then
+        # ── Mode mise à jour ──────────────────────────────
+        update
+    else
+        # ── Première installation ou reconfiguration ──────
+        configure
+        write_env
+        deploy
+    fi
+
     verify
 }
 
